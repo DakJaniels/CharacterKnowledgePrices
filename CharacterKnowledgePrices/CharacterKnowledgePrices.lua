@@ -1,16 +1,25 @@
+-- Libs
 local LCCC = LibCodesCommonCode
 local LCK = LibCharacterKnowledge
+local CK = CharacterKnowledge
+local LibPrice = LibPrice
 
+-- ZOS api/constants
+local EVENT_MANAGER = EVENT_MANAGER
+local ZO_SavedVars = ZO_SavedVars
+local ZO_AbbreviateAndLocalizeNumber = ZO_AbbreviateAndLocalizeNumber
+local ZO_Currency_GetKeyboardFormattedCurrencyIcon = ZO_Currency_GetKeyboardFormattedCurrencyIcon
+local zo_round = zo_round
+local GetString = GetString
+local CURT_MONEY = CURT_MONEY
+local EVENT_ADD_ON_LOADED = EVENT_ADD_ON_LOADED
+local CURRENCY_ICON = ZO_Currency_GetKeyboardFormattedCurrencyIcon(CURT_MONEY)
+
+-- Addon
 local ADDON_NAME = "CharacterKnowledgePrices"
 local PRICE_SCAN_NAME = ADDON_NAME .. "Scan"
-local PRICE_SORT_KEY = "priceGold"
-local NAME_WIDTH_WITH_PRICE = 260
-local NAME_WIDTH_WITHOUT_PRICE = 380
-local QUALITY_WIDTH_WITH_PRICE = 90
-local QUALITY_WIDTH_WITHOUT_PRICE = 210
-local PRICE_COLUMN_WIDTH = 96
 
-CharacterKnowledgePrices =
+local CharacterKnowledgePrices =
 {
 	name = ADDON_NAME,
 	defaults =
@@ -19,66 +28,55 @@ CharacterKnowledgePrices =
 	},
 }
 
-local CharacterKnowledgePrices = CharacterKnowledgePrices
-
-local PRICE_SORT_KEYS =
-{
-	[PRICE_SORT_KEY] = { isNumeric = true, tiebreaker = "name" },
-	["name"] = { caseInsensitive = true },
-}
+local priceScanRunning = false
 
 local function IsPriceColumnShown()
 	local savedVars = CharacterKnowledgePrices.vars
 	return savedVars ~= nil and savedVars.showPriceColumn
 end
 
-local function GetPriceGold(itemLink)
-	local goldPrices = LibPrice.ItemLinkToBidAskSpread(itemLink)[LibPrice.CURRENCY_TYPE_GOLD]
+local function GetPriceGold(itemId)
+	local goldPrices = LibPrice.ItemLinkToBidAskSpread(LCK.GetItemLinkFromItemId(itemId))[LibPrice.CURRENCY_TYPE_GOLD]
 	local price = goldPrices and (goldPrices[LibPrice.PRICE_SALE] or goldPrices[LibPrice.PRICE_AVG] or goldPrices[LibPrice.PRICE_ASK] or goldPrices[LibPrice.PRICE_BID])
-	if (price) then
-		return price.value
+	if (price and price.value > 0) then
+		return zo_round(price.value)
 	end
-	return -1
+	return 0
 end
 
-local function ApplyPriceColumnLayout(list)
-	local showPriceColumn = IsPriceColumnShown()
-	list.headers:GetNamedChild("Quality"):SetWidth(showPriceColumn and QUALITY_WIDTH_WITH_PRICE or QUALITY_WIDTH_WITHOUT_PRICE)
-	local priceHeader = list.characterKnowledgePricesHeader
-	priceHeader:SetHidden(not showPriceColumn)
-	priceHeader:SetWidth(showPriceColumn and PRICE_COLUMN_WIDTH or 0)
-	if (not showPriceColumn and list.currentSortKey == PRICE_SORT_KEY) then
-		list.currentSortKey = "extended"
-		list.currentSortOrder = ZO_SORT_ORDER_UP
-		list.sortHeaderGroup:SelectAndResetSortForKey("extended")
-	end
+local function GetAuxiliaryLabel(auxData)
+	local USE_UPPERCASE_NUMBER_SUFFIXES = true
+	local abbreviatedAmount = ZO_AbbreviateAndLocalizeNumber(auxData, NUMBER_ABBREVIATION_PRECISION_TENTHS, USE_UPPERCASE_NUMBER_SUFFIXES)
+	return abbreviatedAmount .. " " .. CURRENCY_ICON
 end
 
-local function StopPriceScan(list)
+local function StopPriceScan()
 	EVENT_MANAGER:UnregisterForUpdate(PRICE_SCAN_NAME)
-	list.characterKnowledgePricesScanning = false
+	priceScanRunning = false
 end
 
-function CharacterKnowledgePrices.RefreshPriceColumn(list)
-	if (not IsPriceColumnShown() or list.characterKnowledgePricesValid or list.characterKnowledgePricesScanning or #list.masterList == 0) then
+local function IsRecipeOrPlan(data)
+	return data.category == LCK.ITEM_CATEGORY_RECIPE or data.category == LCK.ITEM_CATEGORY_PLAN
+end
+
+function CharacterKnowledgePrices.FillExistingPrices()
+	local list = CK.list
+	if (not IsPriceColumnShown() or priceScanRunning or not list or #list.masterList == 0) then
 		return
 	end
 
-	for _, data in ipairs(list.masterList) do
-		data.priceGold = -1
-	end
-	list.characterKnowledgePricesScanning = true
-
+	priceScanRunning = true
 	local startIndex = 1
 	local blockSize = 200
 	EVENT_MANAGER:RegisterForUpdate(PRICE_SCAN_NAME, 0, function ()
 		local stopIndex = startIndex + blockSize
 		for index = startIndex, stopIndex - 1 do
 			local data = list.masterList[index]
-			data.priceGold = GetPriceGold(LCK.GetItemLinkFromItemId(data.itemId))
+			if (IsRecipeOrPlan(data)) then
+				data.auxiliary = GetPriceGold(data.itemId)
+			end
 			if (index >= #list.masterList) then
-				StopPriceScan(list)
-				list.characterKnowledgePricesValid = true
+				StopPriceScan()
 				if (not list.researchModeIsSelected) then
 					list:RefreshFilters()
 				end
@@ -89,28 +87,13 @@ function CharacterKnowledgePrices.RefreshPriceColumn(list)
 	end)
 end
 
-function CharacterKnowledgePrices.OnListSetup(list)
-	if (list.characterKnowledgePricesAttached) then
+function CharacterKnowledgePrices.RegisterAuxiliaryColumn()
+	if (CharacterKnowledgePrices.auxiliaryColumnRegistered) then
 		return
 	end
-	list.characterKnowledgePricesAttached = true
-
-	local priceHeader = CreateControlFromVirtual(list.headers:GetName() .. "Price", list.headers, "ZO_SortHeader")
-	priceHeader:SetAnchor(TOPLEFT, list.headers:GetNamedChild("Characters"), TOPRIGHT, 0, 0)
-	priceHeader:SetDimensions(PRICE_COLUMN_WIDTH, 32)
-	ZO_SortHeader_Initialize(priceHeader, GetString(SI_CKP_HEADER_PRICE), PRICE_SORT_KEY, ZO_SORT_ORDER_UP, TEXT_ALIGN_RIGHT, "ZoFontGameLargeBold")
-	list.sortHeaderGroup:AddHeader(priceHeader)
-	list.characterKnowledgePricesHeader = priceHeader
-
-	local originalSortFunction = list.sortFunction
-	list.sortFunction = function (listEntry1, listEntry2)
-		if (list.currentSortKey == PRICE_SORT_KEY) then
-			return ZO_TableOrderingFunction(listEntry1.data, listEntry2.data, PRICE_SORT_KEY, PRICE_SORT_KEYS, list.currentSortOrder)
-		end
-		return originalSortFunction(listEntry1, listEntry2)
-	end
-
-	ApplyPriceColumnLayout(list)
+	CharacterKnowledgePrices.auxiliaryColumnRegistered = true
+	CK.ConfigureAuxiliaryColumn(GetPriceGold, GetAuxiliaryLabel)
+	CharacterKnowledgePrices.FillExistingPrices()
 end
 
 function CharacterKnowledgePrices.OnSettingChanged(showPriceColumn)
@@ -119,13 +102,13 @@ function CharacterKnowledgePrices.OnSettingChanged(showPriceColumn)
 		return
 	end
 
-	local list = CharacterKnowledge.list
-	if (not list or not list.characterKnowledgePricesAttached) then
-		return
+	StopPriceScan()
+	CK.ConfigureAuxiliaryColumn()
+	CharacterKnowledgePrices.auxiliaryColumnRegistered = false
+	local list = CK.list
+	if (list) then
+		list:RefreshFilters()
 	end
-	StopPriceScan(list)
-	ApplyPriceColumnLayout(list)
-	list:RefreshFilters()
 end
 
 local function OnAddOnLoaded(eventCode, addonName)
@@ -137,7 +120,7 @@ local function OnAddOnLoaded(eventCode, addonName)
 	CharacterKnowledgePrices.vars = ZO_SavedVars:NewAccountWide("CharacterKnowledgePricesSavedVariables", 1, nil, CharacterKnowledgePrices.defaults)
 
 	if (IsPriceColumnShown()) then
-		CharacterKnowledgePrices.RegisterPriceColumn()
+		CharacterKnowledgePrices.RegisterAuxiliaryColumn()
 	end
 
 	local LAM = LCCC.GetLibAddonMenu()
@@ -160,57 +143,9 @@ local function OnAddOnLoaded(eventCode, addonName)
 																	 getFunc = function () return CharacterKnowledgePrices.vars.showPriceColumn end,
 																	 setFunc = CharacterKnowledgePrices.OnSettingChanged,
 																	 requiresReload = true,
-																	 default = CharacterKnowledgePrices.defaults.showPriceColumn
+																	 default = CharacterKnowledgePrices.defaults.showPriceColumn,
 																 },
 															 })
-	end
-end
-
-function CharacterKnowledgePrices.RegisterPriceColumn()
-	if (CharacterKnowledgePrices.priceColumnRegistered) then
-		return
-	end
-	CharacterKnowledgePrices.priceColumnRegistered = true
-
-	ZO_PostHook(CharacterKnowledgeList, "Setup", function (list)
-		CharacterKnowledgePrices.OnListSetup(list)
-	end)
-
-	ZO_PostHook(CharacterKnowledgeList, "BuildMasterList", function (list)
-		StopPriceScan(list)
-		list.characterKnowledgePricesValid = false
-		CharacterKnowledgePrices.RefreshPriceColumn(list)
-	end)
-
-	ZO_PostHook(CharacterKnowledgeList, "SetupItemRow", function (list, control, data)
-		local showPriceColumn = IsPriceColumnShown()
-		control:GetNamedChild("Name"):SetWidth(showPriceColumn and NAME_WIDTH_WITH_PRICE or NAME_WIDTH_WITHOUT_PRICE)
-
-		local priceCell = control:GetNamedChild("Price")
-		if (not priceCell) then
-			priceCell = WINDOW_MANAGER:CreateControl(control:GetName() .. "Price", control, CT_LABEL)
-			priceCell:SetFont("ZoFontGame")
-			priceCell:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-			priceCell:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-			priceCell:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-			priceCell:SetAnchor(LEFT, control:GetNamedChild("Characters"), RIGHT, 0, 0)
-			priceCell:SetDimensions(PRICE_COLUMN_WIDTH, 30)
-		end
-
-		priceCell:SetHidden(not showPriceColumn)
-		priceCell:SetWidth(showPriceColumn and PRICE_COLUMN_WIDTH or 0)
-		priceCell:SetColor(ZO_DEFAULT_TEXT:UnpackRGBA())
-		if (showPriceColumn and data.priceGold and data.priceGold > 0) then
-			priceCell:SetText(ZO_Currency_FormatKeyboard(CURT_MONEY, zo_round(data.priceGold), ZO_CURRENCY_FORMAT_AMOUNT_ICON))
-		else
-			priceCell:SetText("")
-		end
-	end)
-
-	local list = CharacterKnowledge.list
-	if (list) then
-		CharacterKnowledgePrices.OnListSetup(list)
-		CharacterKnowledgePrices.RefreshPriceColumn(list)
 	end
 end
 
