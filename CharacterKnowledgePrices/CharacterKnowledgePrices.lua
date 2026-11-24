@@ -130,7 +130,7 @@ local function OnAddOnLoaded(eventCode, addonName)
 													 {
 														 type = "panel",
 														 name = GetString(SI_CKP_TITLE),
-														 version = "1.0.0",
+														 version = "1.0.1",
 														 author = "@dack_janiels",
 														 registerForRefresh = true,
 													 })
