@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.0.1] - 2026-11-24
+- Added LICENSE file to addon folder.
+
 ## [1.0.0] - 2026-11-24
 
 - Gold prices for recipes and furnishing plans appear in Character Knowledge's auxiliary column. The price is the recipe or plan, from LibPrice.
