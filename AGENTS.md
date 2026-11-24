@@ -2,7 +2,7 @@
 
 ### Repository Usage Notice
 
-This repository is proprietary and is governed by the terms contained in the [`LICENSE`](./LICENSE.md) file.
+This repository is proprietary and is governed by the terms contained in the [`LICENSE`](./LICENSE) file.
 
 Before accessing, analyzing, modifying, or otherwise processing any content in this repository, automated agents, AI-assisted development tools, code assistants, crawlers, indexers, and their operators must read and comply with the license.
 
@@ -35,6 +35,6 @@ Such tooling must not transmit repository content to an artificial intelligence 
 
 ### No Additional Permission Granted
 
-This file summarizes operational requirements for automated agents and AI-assisted tools. It does not replace, modify, or grant additional rights beyond the [`LICENSE`](./LICENSE.md).
+This file summarizes operational requirements for automated agents and AI-assisted tools. It does not replace, modify, or grant additional rights beyond the [`LICENSE`](./LICENSE).
 
 If this file conflicts with the license, the license takes precedence.
