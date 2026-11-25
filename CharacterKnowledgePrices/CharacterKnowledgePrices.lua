@@ -9,7 +9,6 @@ local EVENT_MANAGER = EVENT_MANAGER
 local ZO_SavedVars = ZO_SavedVars
 local ZO_AbbreviateAndLocalizeNumber = ZO_AbbreviateAndLocalizeNumber
 local ZO_Currency_GetKeyboardFormattedCurrencyIcon = ZO_Currency_GetKeyboardFormattedCurrencyIcon
-local zo_round = zo_round
 local GetString = GetString
 local CURT_MONEY = CURT_MONEY
 local EVENT_ADD_ON_LOADED = EVENT_ADD_ON_LOADED
@@ -24,7 +23,10 @@ local CharacterKnowledgePrices =
 	name = ADDON_NAME,
 	defaults =
 	{
-		showPriceColumn = false,
+		showPriceColumn = true,
+		useMasterMerchant = true,
+		useArkadiusTradeTools = true,
+		useTamrielTradeCentre = true,
 	},
 }
 
@@ -35,11 +37,31 @@ local function IsPriceColumnShown()
 	return savedVars ~= nil and savedVars.showPriceColumn
 end
 
+local function AddAverage(totalGold, sourceCount, averageGold)
+	if (averageGold and averageGold > 0) then
+		return totalGold + averageGold, sourceCount + 1
+	end
+	return totalGold, sourceCount
+end
+
 local function GetPriceGold(itemId)
-	local goldPrices = LibPrice.ItemLinkToBidAskSpread(LCK.GetItemLinkFromItemId(itemId))[LibPrice.CURRENCY_TYPE_GOLD]
-	local price = goldPrices and (goldPrices[LibPrice.PRICE_SALE] or goldPrices[LibPrice.PRICE_AVG] or goldPrices[LibPrice.PRICE_ASK] or goldPrices[LibPrice.PRICE_BID])
-	if (price and price.value > 0) then
-		return zo_round(price.value)
+	local savedVars = CharacterKnowledgePrices.vars
+	local priceData = LibPrice.ItemLinkToPriceData(LCK.GetItemLinkFromItemId(itemId), "mm", "att", "ttc")
+	local mmPrice = priceData.mm
+	local attPrice = priceData.att
+	local ttcPrice = priceData.ttc
+	local totalGold, sourceCount = 0, 0
+	if (savedVars.useMasterMerchant) then
+		totalGold, sourceCount = AddAverage(totalGold, sourceCount, mmPrice and mmPrice.avgPrice)
+	end
+	if (savedVars.useArkadiusTradeTools) then
+		totalGold, sourceCount = AddAverage(totalGold, sourceCount, attPrice and attPrice.avgPrice)
+	end
+	if (savedVars.useTamrielTradeCentre) then
+		totalGold, sourceCount = AddAverage(totalGold, sourceCount, ttcPrice and ttcPrice.Avg)
+	end
+	if (sourceCount > 0) then
+		return totalGold / sourceCount
 	end
 	return 0
 end
@@ -96,6 +118,16 @@ function CharacterKnowledgePrices.RegisterAuxiliaryColumn()
 	CharacterKnowledgePrices.FillExistingPrices()
 end
 
+function CharacterKnowledgePrices.OnPriceSourceChanged(sourceKey, enabled)
+	CharacterKnowledgePrices.vars[sourceKey] = enabled
+	if (not IsPriceColumnShown()) then
+		return
+	end
+
+	StopPriceScan()
+	CharacterKnowledgePrices.FillExistingPrices()
+end
+
 function CharacterKnowledgePrices.OnSettingChanged(showPriceColumn)
 	CharacterKnowledgePrices.vars.showPriceColumn = showPriceColumn
 	if (showPriceColumn) then
@@ -144,6 +176,35 @@ local function OnAddOnLoaded(eventCode, addonName)
 																	 setFunc = CharacterKnowledgePrices.OnSettingChanged,
 																	 requiresReload = true,
 																	 default = CharacterKnowledgePrices.defaults.showPriceColumn,
+																 },
+																 {
+																	 type = "header",
+																	 name = SI_CKP_SETTING_SOURCES,
+																	 tooltip = SI_CKP_SETTING_SOURCES_TOOLTIP,
+																 },
+																 {
+																	 type = "checkbox",
+																	 name = SI_CKP_SETTING_MASTER_MERCHANT,
+																	 tooltip = SI_CKP_SETTING_MASTER_MERCHANT_TOOLTIP,
+																	 getFunc = function () return CharacterKnowledgePrices.vars.useMasterMerchant end,
+																	 setFunc = function (enabled) CharacterKnowledgePrices.OnPriceSourceChanged("useMasterMerchant", enabled) end,
+																	 default = CharacterKnowledgePrices.defaults.useMasterMerchant,
+																 },
+																 {
+																	 type = "checkbox",
+																	 name = SI_CKP_SETTING_ARKADIUS,
+																	 tooltip = SI_CKP_SETTING_ARKADIUS_TOOLTIP,
+																	 getFunc = function () return CharacterKnowledgePrices.vars.useArkadiusTradeTools end,
+																	 setFunc = function (enabled) CharacterKnowledgePrices.OnPriceSourceChanged("useArkadiusTradeTools", enabled) end,
+																	 default = CharacterKnowledgePrices.defaults.useArkadiusTradeTools,
+																 },
+																 {
+																	 type = "checkbox",
+																	 name = SI_CKP_SETTING_TAMRIEL_TRADE_CENTRE,
+																	 tooltip = SI_CKP_SETTING_TAMRIEL_TRADE_CENTRE_TOOLTIP,
+																	 getFunc = function () return CharacterKnowledgePrices.vars.useTamrielTradeCentre end,
+																	 setFunc = function (enabled) CharacterKnowledgePrices.OnPriceSourceChanged("useTamrielTradeCentre", enabled) end,
+																	 default = CharacterKnowledgePrices.defaults.useTamrielTradeCentre,
 																 },
 															 })
 	end
