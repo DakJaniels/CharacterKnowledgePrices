@@ -1,6 +1,6 @@
 # AGENTS
 
-### Repository Usage Notice
+## Repository Usage Notice
 
 This repository is proprietary and is governed by the terms contained in the [`LICENSE`](./LICENSE) file.
 
