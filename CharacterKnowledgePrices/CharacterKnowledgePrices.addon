@@ -7,8 +7,8 @@
 ## Title: Character Knowledge Prices
 ## Description: Optional LibPrice values in Character Knowledge's auxiliary column for recipes and furnishing plans.
 ## Author: @dack_janiels[PC]
-## Version: 1.0.1
-## AddOnVersion: 10100
+## Version: 1.0.2
+## AddOnVersion: 10200
 ## APIVersion: 101051 101052
 ## SavedVariables: CharacterKnowledgePricesSavedVariables
 ## DependsOn: CharacterKnowledge>=301070 LibPrice>=70550
